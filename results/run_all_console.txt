@@ -1,0 +1,101 @@
+﻿Rscript.exe : 
+At line:1 char:399
++ ... TUNE = "1"; & "C:\Program Files\R\R-4.5.0\bin\Rscript.exe" "R\run_all ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+=================================================================
+  01_prepare_data.R   (14:53:57)
+=================================================================
+  done in 0.4 min
+
+=================================================================
+  02_mortality_rates.R   (14:54:19)
+=================================================================
+  done in 1.4 min
+
+=================================================================
+  03_spatial_analysis.R   (14:55:44)
+=================================================================
+  done in 1.1 min
+
+=================================================================
+  04_machine_learning.R   (14:56:51)
+=================================================================
+  done in 41.4 min
+
+=================================================================
+  04b_recalibration.R   (15:38:14)
+=================================================================
+  done in 3.3 min
+
+=================================================================
+  05_bayesian_spatiotemporal.R   (15:41:33)
+=================================================================
+  done in 2.9 min
+
+=================================================================
+  06_figures.R   (15:44:28)
+=================================================================
+  done in 0.9 min
+
+=================================================================
+  06b_figure_exposure.R   (15:45:23)
+=================================================================
+  done in 0.1 min
+
+=================================================================
+  07_tables.R   (15:45:30)
+=================================================================
+  done in 0.1 min
+building the submission package
+rendering manuscript.qmd
+rendering additional_file_1_supplementary.qmd
+[1] TRUE
+[1] TRUE
+BMC Public Health submission package
+Built: 2026-09-19 15:45
+
+Abstract words (limit 350):          343 
+Keywords (3-10):                     7
+Main text words (Background-Conclusions): 4536
+Tables in manuscript:                8
+Main figures cited:                  1, 2, 3, 4, 5, 6, 7
+References:                          62
+Line numbering in manuscript:        TRUE
+Unresolved citation warnings:        0
+NA/NaN/Inf in rendered text:         0
+
+Placeholders the authors must complete before submission:
+  - XYZ
+  - [repository URL and DOI to be inserted before submission]
+  - [Second author: contributions to be inserted.]
+  - [to be inserted]
+  - [Second author]
+  - [Affiliation of second author]
+  - [repository DOI to   be inserted]
+
+Files:
+   Additional_file_1.docx
+   Additional_file_2.docx
+   Additional_file_3.docx
+   Cover_letter.docx
+   Figure_1.pdf
+   Figure_1.png
+   Figure_2.pdf
+   Figure_2.png
+   Figure_3.pdf
+   Figure_3.png
+   Figure_4.pdf
+   Figure_4.png
+   Figure_5.pdf
+   Figure_5.png
+   Figure_6.pdf
+   Figure_6.png
+   Figure_7.pdf
+   Figure_7.png
+   Manuscript.docx
+   Title_page.docx
+
+All steps complete. Outputs in results/, figures/ and manuscript/.

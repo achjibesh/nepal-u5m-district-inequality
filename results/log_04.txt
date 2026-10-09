@@ -1,0 +1,100 @@
+[00_setup] project = D:/khoj_nso/NP-Under-Five-Mortality/u5m_ml_spatiotemporal
+Warning messages:
+1: package 'dplyr' was built under R version 4.5.3 
+2: package 'tidyr' was built under R version 4.5.3 
+3: package 'data.table' was built under R version 4.5.1 
+4: package 'ggplot2' was built under R version 4.5.3 
+5: package 'patchwork' was built under R version 4.5.1 
+6: package 'Matrix' was built under R version 4.5.3 
+7: package 'spdep' was built under R version 4.5.3 
+8: package 'spData' was built under R version 4.5.3 
+Warning message:
+package 'shapviz' was built under R version 4.5.2 
+[04] features with any missingness: 
+[04] person-periods: 209390 | segment deaths: 1487
+[04] design matrix: 209390 x 45
+[04] development children: 21826 (deaths 1032) | test children: 9536 (deaths 455)
+[04] tuning gradient boosting ...
+[04] tuning random forest ...
+[04] best boosting config: max_depth=5, eta=0.011, subsample=0.8, colsample=0.61, min_child_weight=10, scale_pos_weight=20, nrounds=600
+[04] best forest config: num_trees=500, mtry=3, min_node=100, max_depth=0, sample_fraction=0.98, pos_weight=5
+[04] computing out-of-fold predictions for the stack ...
+                          learner   roc_auc    roc_lo    roc_hi     pr_auc
+1 Elastic-net logistic regression 0.8120497 0.7621599 0.8329265 0.05918291
+2                   Random forest 0.7971159 0.7352990 0.8150530 0.07906259
+3               Gradient boosting 0.8118159 0.7610905 0.8313151 0.06504446
+4                Stacked ensemble 0.8131169 0.7608289 0.8319406 0.07056262
+        brier
+1 0.006913755
+2 0.006931959
+3 0.023505443
+4 0.006879668
+                          learner                                        level
+1 Elastic-net logistic regression Child (probability of dying before age five)
+2               Gradient boosting Child (probability of dying before age five)
+3                   Random forest Child (probability of dying before age five)
+    roc_auc    pr_auc      brier prevalence    n
+1 0.5904588 0.1613977 0.08201804      0.091 5000
+2 0.6205728 0.1647665 0.28918696      0.091 5000
+3 0.6222053 0.1862110 0.08089228      0.091 5000
+       province n_person_periods deaths   roc_xgb     pr_xgb  roc_enet
+1         Koshi            33376    213 0.8234304 0.04395024 0.8225966
+2       Madhesh            36516    265 0.8005806 0.03634220 0.7982874
+3       Bagmati            24340    129 0.8256549 0.07976220 0.8113152
+4       Gandaki            18695    100 0.8142759 0.04445595 0.8155835
+5       Lumbini            33083    223 0.8249241 0.03909999 0.8287346
+6       Karnali            29831    241 0.8011560 0.05299872 0.7884669
+7 Sudurpashchim            33549    316 0.8029203 0.07552790 0.8012638
+     pr_enet
+1 0.04719653
+2 0.04202584
+3 0.06741142
+4 0.04232189
+5 0.03867681
+6 0.04925716
+7 0.09441569
+       variable mean_abs_shap                             label
+1         seg_f       1.16347                       Age segment
+2        bi_num       0.23715 Preceding birth interval (months)
+3    medu_years       0.17385       Maternal years of schooling
+4  wealth_score       0.10472      Household wealth index score
+5    mage_birth       0.08135     Maternal age at birth (years)
+6      bord_num       0.08074                       Birth order
+7      province       0.07930                          Province
+8     residence       0.07041                Place of residence
+9        period       0.06206                      Birth period
+10       alt_km       0.05078                     Altitude (km)
+11     multiple       0.03581                    Multiple birth
+12    ethnicity       0.03239                   Caste/ethnicity
+13        round       0.03017                      Survey round
+14    sanit_imp       0.02559               Improved sanitation
+15        mwork       0.02471               Maternal employment
+16          sex       0.01308                      Sex of child
+17  electricity       0.01199             Household electricity
+18   clean_fuel       0.01070                Clean cooking fuel
+19    water_imp       0.00967           Improved drinking water
+20    hh_head_f       0.00893             Sex of household head
+21        media       0.00874           Maternal media exposure
+                block     rel
+1     Baseline hazard 0.50244
+2     Child and birth 0.10241
+3            Maternal 0.07508
+4           Household 0.04522
+5            Maternal 0.03513
+6     Child and birth 0.03487
+7  Geographic context 0.03425
+8           Household 0.03041
+9  Geographic context 0.02680
+10 Geographic context 0.02193
+11    Child and birth 0.01546
+12           Maternal 0.01399
+13 Geographic context 0.01303
+14          Household 0.01105
+15           Maternal 0.01067
+16    Child and birth 0.00565
+17          Household 0.00518
+18          Household 0.00462
+19          Household 0.00418
+20          Household 0.00386
+21           Maternal 0.00378
+[04] done.

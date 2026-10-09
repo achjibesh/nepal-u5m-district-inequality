@@ -1,0 +1,82 @@
+[00_setup] project = D:/khoj_nso/NP-Under-Five-Mortality/u5m_ml_spatiotemporal
+Warning messages:
+1: package 'dplyr' was built under R version 4.5.3 
+2: package 'tidyr' was built under R version 4.5.3 
+3: package 'data.table' was built under R version 4.5.1 
+4: package 'ggplot2' was built under R version 4.5.3 
+5: package 'patchwork' was built under R version 4.5.1 
+6: package 'Matrix' was built under R version 4.5.3 
+7: package 'spdep' was built under R version 4.5.3 
+8: package 'spData' was built under R version 4.5.3 
+[03] neighbour links: 376 | mean = 4.88 | districts with no neighbour: 0
+The default for subtract_mean_in_numerator set TRUE from February 2016
+The default for subtract_mean_in_numerator set TRUE from February 2016
+The default for subtract_mean_in_numerator set TRUE from February 2016
+The default for subtract_mean_in_numerator set TRUE from February 2016
+The default for subtract_mean_in_numerator set TRUE from February 2016
+              stratum            rate moran_I moran_p geary_C geary_p eb_index
+1  2002-2022 (pooled) Empirical-Bayes  0.2819  0.0001   0.755  0.0023   0.3073
+2  2002-2022 (pooled)             Raw  0.2493  0.0005   0.745  0.0016       NA
+3           2002-2006 Empirical-Bayes  0.0230  0.2994   1.028  0.6286   0.0528
+4           2002-2006             Raw  0.0477  0.2038   0.958  0.2881       NA
+5           2007-2011 Empirical-Bayes  0.1990  0.0031   0.873  0.0646   0.1811
+6           2007-2011             Raw  0.0777  0.1100   0.960  0.3027       NA
+7           2012-2016 Empirical-Bayes  0.1381  0.0236   0.836  0.0321   0.1133
+8           2012-2016             Raw  0.0492  0.1856   0.866  0.0666       NA
+9           2017-2022 Empirical-Bayes  0.0552  0.1671   0.933  0.1962   0.1017
+10          2017-2022             Raw  0.1879  0.0060   0.829  0.0202       NA
+     eb_p
+1  0.0001
+2      NA
+3  0.1796
+4      NA
+5  0.0052
+6      NA
+7  0.0478
+8      NA
+9  0.0656
+10     NA
+             stratum   cluster n
+1          2002-2006 High-High 1
+2          2002-2006  High-Low 2
+3          2002-2006   Low-Low 3
+4 2002-2022 (pooled)  High-Low 1
+5          2007-2011 High-High 1
+6          2017-2022  High-Low 2
+7          2017-2022  Low-High 1
+   dcode district      province n_periods
+1 700000  Bajhang Sudurpashchim         1
+2 590000    Dolpa       Karnali         1
+              stratum   hotspot  n
+1           2002-2006 Cold spot  4
+2           2002-2006  Hot spot  4
+3  2002-2022 (pooled) Cold spot  9
+4  2002-2022 (pooled)  Hot spot 10
+5           2007-2011 Cold spot  3
+6           2007-2011  Hot spot 10
+7           2012-2016 Cold spot  1
+8           2012-2016  Hot spot  5
+9           2017-2022 Cold spot  2
+10          2017-2022  Hot spot  4
+[03] total observed deaths = 1487 | total expected (rescaled) = 1487
+[03] scan cylinders evaluated: 21567
+[03] observed max LLR = 17.13 | Monte Carlo max LLR: median 5.42, 95th pct 8.42 | non-finite replicates: 0
+  rank        type period_from period_to n_districts observed expected   rr
+1    1 Most likely   2007-2011 2012-2016          10      184    118.4 1.63
+2    2   Secondary   2002-2006 2002-2006           5       28     15.2 1.86
+3    3   Secondary   2012-2016 2017-2022           4       76     53.9 1.43
+4    4   Secondary   2007-2011 2007-2011           5       77     56.3 1.39
+5    5   Secondary   2017-2022 2017-2022           2       16      8.3 1.95
+6    6   Secondary   2017-2022 2017-2022          11       25     15.1 1.67
+7    7   Secondary   2002-2006 2002-2006           1        8      4.0 2.00
+8    8   Secondary   2007-2011 2012-2016           1       28     19.9 1.41
+    llr p_value
+1 17.13   0.001
+2  4.36   0.831
+3  4.18   0.873
+4  3.54   0.984
+5  2.87   1.000
+6  2.76   1.000
+7  1.53   1.000
+8  1.48   1.000
+[03] done.

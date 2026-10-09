@@ -1,0 +1,22 @@
+"variable","mean_abs_shap","label","block","rel"
+"seg_f",1.16346895431998,"Age segment","Baseline hazard",0.502443323706561
+"bi_num",0.2371540372584,"Preceding birth interval (months)","Child and birth",0.102414819293725
+"medu_years",0.173848306311065,"Maternal years of schooling","Maternal",0.0750762798778258
+"wealth_score",0.104717652365636,"Household wealth index score","Household",0.0452222511911293
+"mage_birth",0.0813470794600055,"Maternal age at birth (years)","Maternal",0.0351296842308919
+"bord_num",0.0807393589909131,"Birth order","Child and birth",0.0348672405350446
+"province",0.0793038950498627,"Province","Geographic context",0.034247336350301
+"residence",0.0704126184026749,"Place of residence","Household",0.0304076442175456
+"period",0.0620562528073669,"Birth period","Geographic context",0.026798953080387
+"alt_km",0.0507754077212728,"Altitude (km)","Geographic context",0.0219273273457848
+"multiple",0.0358086961938379,"Multiple birth","Child and birth",0.0154639625461654
+"ethnicity",0.0323934067797303,"Caste/ethnicity","Maternal",0.0139890719972835
+"round",0.0301730578761805,"Survey round","Geographic context",0.0130302157435386
+"sanit_imp",0.0255884230260319,"Improved sanitation","Household",0.0110503441160778
+"mwork",0.0247135988279922,"Maternal employment","Maternal",0.0106725518457384
+"sex",0.0130800702230787,"Sex of child","Child and birth",0.00564861995912907
+"electricity",0.0119906727817048,"Household electricity","Household",0.00517816437090821
+"clean_fuel",0.0106994127976603,"Clean cooking fuel","Household",0.00462053457275706
+"water_imp",0.00967283668702553,"Improved drinking water","Household",0.00417720833603201
+"hh_head_f",0.00893357170446892,"Sex of household head","Household",0.00385795722618808
+"media",0.00874496943552822,"Maternal media exposure","Maternal",0.00377650945698606

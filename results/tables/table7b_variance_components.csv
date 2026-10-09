@@ -1,0 +1,5 @@
+"Component","Posterior mean","95% CrI"
+"Precision for id_space","11.539","5.892-20.629"
+"Phi for id_space","0.528","0.143-0.892"
+"Precision for id_time","5177.125","41.934-35429.428"
+"Precision for id_time2","191.249","25.652-879.863"

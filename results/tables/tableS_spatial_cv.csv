@@ -1,0 +1,8 @@
+"Province","Person-periods","Deaths","AUROC, gradient boosting","AUPRC, gradient boosting","AUROC, elastic net"
+"Koshi","33,376",213,"0.823","0.044","0.823"
+"Madhesh","36,516",265,"0.801","0.036","0.798"
+"Bagmati","24,340",129,"0.826","0.080","0.811"
+"Gandaki","18,695",100,"0.814","0.044","0.816"
+"Lumbini","33,083",223,"0.825","0.039","0.829"
+"Karnali","29,831",241,"0.801","0.053","0.788"
+"Sudurpashchim","33,549",316,"0.803","0.076","0.801"

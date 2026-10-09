@@ -1,0 +1,45 @@
+# Whitelist: ignore everything, then allow only what is meant to be public.
+# NDHS microdata, GPS-derived files and person-level outputs must never be
+# committed (DHS data-use agreement).
+/*
+!/.gitignore
+!/README.md
+!/LICENSE
+
+!/R/
+!/data_reference/
+!/results/
+!/figures/
+/figures/deck/
+
+/manuscript/*
+!/manuscript/
+!/manuscript/manuscript.qmd
+!/manuscript/additional_file_1_supplementary.qmd
+!/manuscript/additional_file_2_STROBE.md
+!/manuscript/additional_file_3_TRIPOD_AI.md
+!/manuscript/references.bib
+!/manuscript/plos.csl
+!/manuscript/reference.docx
+!/manuscript/build_plos_submission.R
+!/manuscript/make_plos_figures.R
+!/manuscript/make_figure_file.R
+!/manuscript/make_reference_docx.R
+
+/review/*
+!/review/
+!/review/repair_docx.R
+
+# never, wherever they appear
+*.rds
+*.RData
+*.Rhistory
+*.dta
+*.DTA
+*.sav
+*.shp
+*.shx
+*.dbf
+*.prj
+.Rproj.user/
+/figures/fig_linkedin_*

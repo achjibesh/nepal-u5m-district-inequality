@@ -1,0 +1,3 @@
+"learner","intercept","slope","weight_used"
+"Gradient boosting",-2.78153138547249,0.991568572068237,20
+"Random forest",1.09471765057127,1.27799239241034,5

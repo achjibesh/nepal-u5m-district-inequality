@@ -1,0 +1,18 @@
+[00_setup] project = D:/khoj_nso/NP-Under-Five-Mortality/u5m_ml_spatiotemporal
+Warning messages:
+1: package 'dplyr' was built under R version 4.5.3 
+2: package 'tidyr' was built under R version 4.5.3 
+3: package 'data.table' was built under R version 4.5.1 
+4: package 'ggplot2' was built under R version 4.5.3 
+5: package 'patchwork' was built under R version 4.5.1 
+6: package 'Matrix' was built under R version 4.5.3 
+7: package 'spdep' was built under R version 4.5.3 
+8: package 'spData' was built under R version 4.5.3 
+[01] clusters joined: 1148 (nearest-feature fallback used for 0)
+[01] reading BR 2011
+[01] reading BR 2016
+[01] reading BR 2022
+[01] pooled birth records: 80256
+[01] child-level analytic sample: 31480 | under-five deaths: 1487
+[01] person-period rows: 209390 | segment deaths: 1487
+[01] done.

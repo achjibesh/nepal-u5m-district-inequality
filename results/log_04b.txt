@@ -1,0 +1,39 @@
+[00_setup] project = D:/khoj_nso/NP-Under-Five-Mortality/u5m_ml_spatiotemporal
+Warning messages:
+1: package 'dplyr' was built under R version 4.5.3 
+2: package 'tidyr' was built under R version 4.5.3 
+3: package 'data.table' was built under R version 4.5.1 
+4: package 'ggplot2' was built under R version 4.5.3 
+5: package 'patchwork' was built under R version 4.5.1 
+6: package 'Matrix' was built under R version 4.5.3 
+7: package 'spdep' was built under R version 4.5.3 
+8: package 'spData' was built under R version 4.5.3 
+[04b] out-of-fold predictions on the development set ...
+   fold 1 done
+   fold 2 done
+   fold 3 done
+   fold 4 done
+   fold 5 done
+            learner intercept     slope weight_used
+1 Gradient boosting -2.781531 0.9915686          20
+2     Random forest  1.094718 1.2779924           5
+                          learner   roc_auc     pr_auc       brier
+1 Elastic-net logistic regression 0.8120497 0.05918291 0.006913755
+2                   Random forest 0.7971159 0.07906259 0.006888613
+3               Gradient boosting 0.8118159 0.06504446 0.006905074
+4                Stacked ensemble 0.8147585 0.06730324 0.006885600
+                          learner calib_intercept calib_slope
+1 Elastic-net logistic regression      0.05118038   1.0068817
+2                   Random forest      0.09770572   1.0122042
+3               Gradient boosting      0.20221925   1.0707726
+4                Stacked ensemble     -0.05096956   0.9918914
+[04b] recomputing child-level probabilities ...
+                          learner                                        level
+1 Elastic-net logistic regression Child (probability of dying before age five)
+2               Gradient boosting Child (probability of dying before age five)
+3                   Random forest Child (probability of dying before age five)
+    roc_auc    pr_auc      brier mean_predicted observed prevalence    n
+1 0.5954883 0.1643971 0.08196609     0.05402758    0.091      0.091 5000
+2 0.6226981 0.1723187 0.08148125     0.05940637    0.091      0.091 5000
+3 0.6234935 0.1874305 0.08097366     0.05325877    0.091      0.091 5000
+[04b] done.

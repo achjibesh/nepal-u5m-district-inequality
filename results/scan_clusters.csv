@@ -1,0 +1,9 @@
+"rank","type","period_from","period_to","n_districts","districts","provinces","observed","expected","rr","llr","p_value"
+1,"Most likely","2007-2011","2012-2016",10,"Achham, Bajhang, Bajura, Dailekh, Darchula, Humla, Jajarkot, Jumla, Kalikot, Mugu","Karnali, Sudurpashchim",184,118.4,1.63,17.13,0.001
+2,"Secondary","2002-2006","2002-2006",5,"Baglung, Dolpa, Rolpa, Rukum_e, Rukum_w","Gandaki, Karnali, Lumbini",28,15.2,1.86,4.36,0.831
+3,"Secondary","2012-2016","2017-2022",4,"Mahottari, Rautahat, Sarlahi, Sindhuli","Bagmati, Madhesh",76,53.9,1.43,4.18,0.873
+4,"Secondary","2007-2011","2007-2011",5,"Baitadi, Dadeldhura, Doti, Kailali, Kanchanpur","Sudurpashchim",77,56.3,1.39,3.54,0.984
+5,"Secondary","2017-2022","2017-2022",2,"Bara, Parsa","Madhesh",16,8.3,1.95,2.87,1
+6,"Secondary","2017-2022","2017-2022",11,"Bhojpur, Dhankuta, Khotang, Okhaldhunga, Panchthar, Sankhuwasabha, Solukhumbu, Sunsari, Taplejung, Terhathum, Udayapur","Koshi",25,15.1,1.67,2.76,1
+7,"Secondary","2002-2006","2002-2006",1,"Ilam","Koshi",8,4,2,1.53,1
+8,"Secondary","2007-2011","2012-2016",1,"Kapilbastu","Lumbini",28,19.9,1.41,1.48,1

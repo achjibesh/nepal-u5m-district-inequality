@@ -1,0 +1,5 @@
+"learner","calib_intercept","calib_slope"
+"Elastic-net logistic regression",0.0706561846200035,1.01149848922599
+"Random forest",0.0977057245031894,1.01220419384474
+"Gradient boosting",0.179434819160155,1.06612777198612
+"Stacked ensemble",-0.0462549543281587,0.993302662008012

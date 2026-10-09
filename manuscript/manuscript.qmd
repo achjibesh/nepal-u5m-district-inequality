@@ -1,0 +1,1024 @@
+---
+title: "District-level inequality in under-five mortality in Nepal, 2002--2022: a Bayesian spatio-temporal analysis"
+format:
+  docx:
+    toc: false
+    number-sections: false
+    reference-doc: reference.docx
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+    theme: cosmo
+bibliography: references.bib
+csl: plos.csl
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup}
+#| include: false
+library(dplyr); library(tidyr); library(knitr); library(stringr)
+library(flextable)
+
+## Tables are rendered with flextable rather than kable: a pipe table leaves
+## Word to guess the column widths, which squeezes the numeric columns of wide
+## tables and breaks figures such as "15,094" across two lines. The caption is
+## the table's first header row, because Quarto drops a flextable caption in
+## Word output.
+tbl <- function(df, caption, align = NULL) {
+  x <- flextable(df) |>
+    theme_booktabs() |>
+    font(fontname = "Times New Roman", part = "all") |>
+    fontsize(size = 10, part = "all") |>
+    bold(part = "header") |>
+    padding(padding.top = 1, padding.bottom = 1, part = "all") |>
+    set_table_properties(layout = "autofit", width = 1,
+                         opts_word = list(split = FALSE, keep_with_next = TRUE))
+  if (!is.null(align)) x <- align(x, j = seq_along(align), align = align, part = "all")
+  add_header_lines(x, caption) |>
+    bold(i = 1, part = "header") |>
+    align(i = 1, part = "header", align = "left") |>
+    fontsize(i = 1, size = 10, part = "header") |>
+    hline(i = 1, part = "header", border = officer::fp_border(color = "black", width = 1))
+}
+
+## Figures: PLOS wants the caption in the text and the figure uploaded as a
+## separate file, which is hard to read in draft. A plain render therefore puts
+## each figure under its caption; the submission build sets U5M_PLOS=1, which
+## leaves the captions standing alone.
+## "Wealth quintile: Poorest" reads badly when the variable name repeats down a
+## whole block. Split it into a Characteristic column printed once per block and
+## a Category column, the same shape as Table 1.
+split_term <- function(df, col = "Term") {
+  parts <- strsplit(as.character(df[[col]]), ": ", fixed = TRUE)
+  ch <- vapply(parts, function(p) if (length(p) > 1) p[1] else "", character(1))
+  ca <- vapply(parts, function(p) if (length(p) > 1) paste(p[-1], collapse = ": ") else p[1],
+               character(1))
+  cbind(data.frame(Characteristic = ifelse(duplicated(ch) & nzchar(ch), "", ch),
+                   Category = ca, check.names = FALSE),
+        df[setdiff(names(df), col)])
+}
+
+EMBED_FIGS <- !nzchar(Sys.getenv("U5M_PLOS"))
+fig_img <- function(f, w = "6.3in") {
+  ## figures/plos/ holds the versions rebuilt for a 7.5 inch column: their text
+  ## stays legible once Word scales the image down. Fall back to the wide
+  ## originals if make_plos_figures.R has not been run yet.
+  dir <- if (file.exists(file.path(PROJ, "figures", "plos", paste0(f, ".png"))))
+    "../figures/plos" else "../figures"
+  if (EMBED_FIGS) cat(sprintf("\n![](%s/%s.png){width=%s}\n", dir, f, w))
+}
+
+PROJ <- Sys.getenv("U5M_PROJ",
+                   "D:/khoj_nso/NP-Under-Five-Mortality/u5m_ml_spatiotemporal")
+RES <- file.path(PROJ, "results"); TAB <- file.path(RES, "tables")
+rd  <- function(f, dir = RES) read.csv(file.path(dir, f), check.names = FALSE)
+tb  <- function(f) rd(paste0(f, ".csv"), TAB)
+
+## stop early, with a clear message, if the analysis outputs are missing or stale
+needed <- c(file.path(RES, c("inla_convergence_posterior.csv", "inla_sensitivity.csv",
+                             "inla_mor.csv", "ml_perf_child.csv")),
+            file.path(TAB, c("key_numbers.csv", "table7d_convergence_posterior.csv",
+                             "tableS_sensitivity.csv", "tableS_mor.csv")))
+missing <- needed[!file.exists(needed)]
+if (!length(missing) && !"level" %in% names(read.csv(file.path(RES, "inla_mor.csv"))))
+  missing <- "inla_mor.csv (old format, without the 'level' column)"
+if (length(missing))
+  stop("Analysis outputs are missing or out of date: ", paste(basename(missing), collapse = ", "),
+       ". Run R/run_all.R to completion before rendering the manuscript.", call. = FALSE)
+
+key_df <- tb("key_numbers")
+key <- setNames(key_df$value, key_df$quantity)
+
+n_fmt <- function(x) formatC(as.numeric(x), format = "d", big.mark = ",")
+f1 <- function(x) formatC(as.numeric(x), format = "f", digits = 1)
+f2 <- function(x) formatC(as.numeric(x), format = "f", digits = 2)
+f3 <- function(x) formatC(as.numeric(x), format = "f", digits = 3)
+pfmt <- function(p) if (as.numeric(p) < 0.001) "< 0.001" else paste0("= ", f3(p))
+## a Monte Carlo p-value from R replicates cannot fall below 1/(R + 1)
+pmc <- function(p, R = 999) {
+  if (as.numeric(p) <= 1 / (R + 1) + 1e-9) paste0("\u2264 ", f3(1 / (R + 1)))
+  else paste0("= ", f3(p))
+}
+and_list <- function(v) {
+  v <- as.character(v)
+  if (length(v) < 2) return(v)
+  paste(paste(head(v, -1), collapse = ", "), "and", tail(v, 1))
+}
+split_list <- function(x) trimws(strsplit(as.character(x), ",")[[1]])
+tidy_district <- function(x) gsub("_[wW]\\b", " West", gsub("_[eE]\\b", " East", x))
+ci_txt <- function(est, lo, hi, d = 2, lab = "95% CrI") {
+  lab <- gsub("%", "%%", lab, fixed = TRUE)   # "95%" must not be read as a format code
+  sprintf(paste0("%.", d, "f (", lab, " %.", d, "f\u2013%.", d, "f)"), est, lo, hi)
+}
+
+nat     <- rd("rates_national_period.csv")
+valid   <- rd("validation_national.csv")
+moran   <- rd("moran_global.csv")
+scan_c  <- rd("scan_clusters.csv")
+getis   <- rd("getis_gi.csv")
+perf    <- rd("ml_performance.csv")
+perf_ch <- rd("ml_perf_child.csv")
+scv     <- rd("ml_spatial_cv.csv")
+shap    <- rd("shap_importance.csv")
+shapp   <- rd("shap_by_province.csv")
+icmp    <- rd("inla_model_comparison.csv")
+ifix    <- rd("inla_fixed_effects.csv")
+ivar    <- rd("inla_variance.csv")
+convp   <- rd("inla_convergence_posterior.csv")
+rrt     <- rd("inla_district_rr.csv")
+mor     <- rd("inla_mor.csv")
+sens    <- rd("inla_sensitivity.csv")
+births  <- readRDS(file.path(PROJ, "data_derived", "births.rds"))
+
+PERIODS <- nat$period; P1 <- PERIODS[1]; PL <- tail(PERIODS, 1)
+
+## typography for running text
+dash <- function(x) gsub("(\\d)-(\\d)", "\\1\u2013\\2", x)                 # 2002-2006 -> 2002–2006
+P1d <- dash(P1); PLd <- dash(PL)
+sgn <- function(x, d = 2) {                              # true minus sign; a value
+  s <- sprintf(paste0("%+.", d, "f"), x)                 # that rounds to zero is
+  s[as.numeric(s) == 0] <- formatC(0, format = "f", digits = d)   # printed unsigned
+  sub("^-", "\u2212", s)
+}
+nw  <- function(n) {                                                      # numbers below 11 as words
+  n <- as.integer(n)
+  if (!is.na(n) && n >= 0 && n <= 10)
+    c("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")[n + 1]
+  else format(n, big.mark = ",")
+}
+
+## ---- spatial ---------------------------------------------------------------
+mp  <- moran[moran$stratum == "2002-2022 (pooled)" & moran$rate == "Empirical-Bayes", ]
+mper_raw <- moran[moran$stratum %in% PERIODS & moran$rate == "Raw", ]
+mper_eb  <- moran[moran$stratum %in% PERIODS & moran$rate == "Empirical-Bayes", ]
+sc1 <- scan_c[1, ]
+sc_districts <- and_list(sort(tidy_district(split_list(sc1$districts))))
+sc_provinces <- and_list(split_list(sc1$provinces))
+sc_cohorts <- local({
+  i <- match(c(sc1$period_from, sc1$period_to), PERIODS)
+  if (i[1] == i[2]) dash(PERIODS[i[1]])
+  else paste(dash(PERIODS[i[1]]), if (i[2] - i[1] == 1) "and" else "to", dash(PERIODS[i[2]]))
+})
+gi_pool <- getis[getis$stratum == "2002-2022 (pooled)", ]
+n_hot  <- sum(gi_pool$hotspot == "Hot spot");  n_cold <- sum(gi_pool$hotspot == "Cold spot")
+n_hotf <- sum(gi_pool$hotspot_fdr == "Hot spot"); n_coldf <- sum(gi_pool$hotspot_fdr == "Cold spot")
+
+## ---- Bayesian area model ---------------------------------------------------
+best_inla <- icmp$model[1]
+dic_gap   <- icmp$dic[icmp$model == "No interaction"] - icmp$dic[1]
+typeiv_fail <- icmp$n_failure[icmp$model == "Type IV"]
+phi <- ivar[grepl("Phi", ivar$component), ]
+rr_last  <- rrt[rrt$period == PL, ]
+n_exceed <- sum(rr_last$p_exceed_1_2 > 0.8)
+top_burden <- and_list(tidy_district(head(rr_last$district[order(-rr_last$rr)], 5)))
+c1 <- convp[1, ]; cL <- convp[nrow(convp), ]
+conv_none <- cL$change_lo < 0 && cL$change_hi > 0
+
+## ---- individual-level model ------------------------------------------------
+or_row <- function(pattern, data = ifix) data[grepl(pattern, data$term), , drop = FALSE][1, ]
+or_of  <- function(pattern, data = ifix) {
+  r <- or_row(pattern, data); or_txt(r$or, r$or_lo, r$or_hi)
+}
+## "OR 1.23, 95% CrI 1.01–1.45": avoids nested parentheses in running text
+or_txt <- function(est, lo, hi) sprintf("OR %.2f, 95%% CrI %.2f–%.2f", est, lo, hi)
+credible <- function(pattern, data = ifix) {
+  r <- or_row(pattern, data); isTRUE(r$or_lo > 1 || r$or_hi < 1)
+}
+KEY <- tibble::tribble(
+  ~pattern,               ~label,                                        ~short,
+  "^multipleMultiple",    "multiple birth",                              "multiple birth",
+  "^bi_cat<24",           "a preceding birth interval under 24 months",  "a birth interval under 24 months",
+  "^meduNone",            "no maternal education",                       "no maternal education",
+  "^wealthPoorest",       "the poorest wealth quintile",                 "the poorest wealth quintile",
+  "^mage_cat<20",         "maternal age under 20 years at the birth",    "adolescent motherhood",
+  "^residenceRural",      "rural residence",                             "rural residence",
+  "^clean_fuelPolluting", "cooking with polluting fuel",                 "polluting cooking fuel"
+)
+KEY$txt  <- vapply(KEY$pattern, or_of, character(1))
+KEY$cred <- vapply(KEY$pattern, credible, logical(1))
+cred <- KEY[KEY$cred, ]
+abstract_or <- and_list(paste0(head(cred$short, 3), " (", head(cred$txt, 3), ")"))
+results_or  <- and_list(paste0(cred$label, " (", cred$txt, ")"))
+
+eth <- ifix[grepl("^ethnicity", ifix$term), ]
+eth$group <- sub("^ethnicity", "", eth$term)
+eth_hi <- eth[eth$or_lo > 1, ]; eth_hi <- eth_hi[order(-eth_hi$or), ]
+eth_lo <- eth[eth$or_hi < 1, ]; eth_lo <- eth_lo[order(eth_lo$or), ]
+fmt_grp <- function(d) and_list(paste0(d$group, " (", or_txt(d$or, d$or_lo, d$or_hi), ")"))
+eth_sentence <- paste0(
+  if (nrow(eth_hi)) paste0("Relative to Brahmin/Chhetri children, higher odds persisted after adjustment for ",
+                           fmt_grp(eth_hi), ". ") else "",
+  if (nrow(eth_lo)) paste0("Lower odds were estimated for ", fmt_grp(eth_lo), ". ") else "",
+  if (!nrow(eth_hi) && !nrow(eth_lo))
+    "No caste or ethnic group differed credibly from Brahmin/Chhetri children after adjustment. " else "")
+
+wat_null <- !credible("^water_impUnimproved") && !credible("^sanit_impUnimproved")
+fh <- or_row("^hh_head_fFemale"); fh_cred <- credible("^hh_head_fFemale")
+mor_d <- mor[mor$level == "District", ]; mor_c <- mor[mor$level == "Cluster", ]
+pred_extra <- paste0(
+  eth_sentence,
+  if (wat_null) "Drinking-water source and sanitation were not credibly associated with mortality after adjustment. " else "",
+  if (fh_cred) paste0("Children in female-headed households had ",
+                      if (fh$or < 1) "lower" else "higher", " odds (",
+                      or_txt(fh$or, fh$or_lo, fh$or_hi),
+                      "), which in Nepal may reflect male labour migration and remittance income rather than headship itself.") else "")
+
+
+MAIN <- "Main model"; FIVE <- "Births in the 5 years before interview"
+ADD  <- "Adding children ever born and household size"
+sens_key <- sens %>% filter(term %in% ifix$term[grepl(paste(KEY$pattern, collapse = "|"), ifix$term)])
+same_dir <- sens_key %>% filter(analysis %in% c(MAIN, FIVE)) %>%
+  select(analysis, term, or) %>% pivot_wider(names_from = analysis, values_from = or)
+n_same_dir <- sum(sign(log(same_dir[[MAIN]])) == sign(log(same_dir[[FIVE]])))
+hh_add  <- or_row("hhsize", sens[sens$analysis == ADD, ])
+par_add <- or_row("parity", sens[sens$analysis == ADD, ])
+
+recent_obs <- 100 * mean(births$complete_exposure[births$period == PL])
+
+## ---- machine learning ------------------------------------------------------
+## best flexible learner, compared against the penalised-regression benchmark
+enet_row <- perf[perf$learner == "Elastic-net logistic regression", ]
+flex     <- perf[perf$learner != "Elastic-net logistic regression", ]
+best_row <- flex[which.max(flex$roc_auc), ]
+best_ml  <- best_row$learner
+enet_top <- enet_row$roc_auc >= best_row$roc_auc
+gb_row   <- perf[perf$learner == "Gradient boosting", ]
+child_ml <- if (best_ml %in% perf_ch$learner) best_ml else perf_ch$learner[which.max(perf_ch$roc_auc)]
+ch_row   <- perf_ch[perf_ch$learner == child_ml, ]
+
+shap_nb <- shap[shap$variable != "seg_f", ]
+top_shap <- and_list(tolower(sub(" \\(.*\\)$", "", head(shap_nb$label, 5))))   # drop units
+topv <- head(shap_nb$variable, 12)
+spd <- shapp %>% filter(variable %in% topv) %>% group_by(province) %>%
+  mutate(share = 100 * mean_abs_shap / sum(mean_abs_shap)) %>% ungroup()
+sumv <- spd %>% group_by(variable) %>%
+  summarise(mn = min(share), mx = max(share), m = mean(share),
+            cv = 100 * sd(share) / mean(share), .groups = "drop") %>%
+  arrange(desc(m)) %>% left_join(shap[, c("variable", "label")], by = "variable")
+wide <- spd %>% select(province, variable, share) %>%
+  pivot_wider(names_from = province, values_from = share) %>%
+  tibble::column_to_rownames("variable")
+cm <- cor(wide, method = "spearman")
+rho_mean <- mean(cm[upper.tri(cm)]); rho_min <- min(cm[upper.tri(cm)])
+prov_s <- spd %>% filter(variable == "province")
+```
+
+**Short title:** Under-five mortality across Nepal's districts, 2002--2022
+
+Jibesh Acharya\*
+
+Population and Statistics Research Hub (PSR Hub), Lalitpur, Nepal
+
+ORCID: Jibesh Acharya 0000-0001-7261-7729
+
+\* Corresponding author
+
+E-mail: acharyajibesh\@gmail.com (JA)
+
+```{r}
+#| output: asis
+if (EMBED_FIGS) cat("*Reading copy: each figure is placed under its caption. The file submitted to PLOS ONE carries the captions alone, with the figures uploaded as separate TIFFs.*
+")
+```
+
+# Abstract {.unnumbered}
+
+National averages hide where children in Nepal still die. District estimates
+from a single survey are too imprecise to guide planning. This study estimated
+under-five mortality for Nepal's 77 districts over two decades and tested
+whether the gap between districts narrowed. Birth histories from the 2011, 2016
+and 2022 Nepal Demographic and Health Surveys were pooled
+(`r n_fmt(key[["n_births"]])` live births) and analysed as discrete-time
+survival data. Spatial clustering was assessed with empirical-Bayes Moran's I
+and a space-time scan statistic. A Bayesian spatio-temporal model estimated
+district relative risks for four birth cohorts. A Bayesian individual-level
+model estimated adjusted odds ratios (ORs). Four machine-learning models were
+compared on held-out children and provinces. Under-five mortality fell from
+`r f1(nat$u5mr[1])` to `r f1(tail(nat$u5mr, 1))` per 1,000 live births between
+the `r P1d` and `r PLd` cohorts. Mortality was spatially clustered (Moran's
+I = `r f2(mp$moran_I)`). One space-time cluster of `r sc1$n_districts`
+districts in `r sc_provinces` had `r f2(sc1$rr)` times the expected risk.
+Between-district dispersion did not change (posterior change
+`r sgn(cL$change_median)`, 95% credible interval `r sgn(cL$change_lo)` to
+`r sgn(cL$change_hi)`). Multiple birth, short birth intervals and no maternal
+education were the strongest predictors. A modest district effect remained
+after adjustment (median `r or_txt(mor_d$median_odds_ratio, mor_d$lo, mor_d$hi)`).
+Machine learning did not outperform penalised regression. Nepal's national
+decline was not accompanied by geographical convergence. Persistently high-risk
+districts need more intensive, not different, intervention.
+
+\newpage
+
+# Introduction
+
+Global under-five mortality has more than halved since 2000. Yet an estimated
+4.8 million children died before their fifth birthday in 2023
+[@igme2025]. Many countries remain off track for the Sustainable Development
+Goal (SDG) target of no more than 25 deaths per 1,000 live births by 2030
+[@sdg3]. Nepal has made large gains. Under-five mortality fell from more than
+100 per 1,000 live births in the mid-1990s [@sreeramareddy2013] to 33 per 1,000
+in the five years before the 2022 Nepal Demographic and Health Survey (NDHS) [@ndhs2022]. Community-based child health programmes, delivered by Female
+Community Health Volunteers, contributed to this progress [@khatri2017].
+Nepal's national SDG roadmap sets a stricter target than the global one: 20
+deaths per 1,000 live births by 2030, with a milestone of 24 by 2025
+[@npc2017].
+
+National averages hide large differences within the country. Nepal's terrain
+ranges from lowland plains to high Himalayan districts. Access to health
+services varies greatly across this terrain. Earlier NDHS analyses found
+persistent regional and socioeconomic inequalities in under-five mortality
+[@sreeramareddy2013; @ghimire2019]. Mortality was highest among Terai/Madhesi
+Dalit children and in Madhesh, Lumbini, Karnali and Sudurpashchim provinces
+[@ghimire2019fa]. Since the 2015 constitution, health services have been run by
+seven provinces and 753 local governments [@thapa2019; @adhikari2022]. These
+governments need sub-national evidence. However, a single NDHS round samples
+only about 100 births per district. District rates from one survey are
+therefore too imprecise to rank districts or to allocate resources.
+
+Bayesian hierarchical models address this problem. They borrow strength from
+neighbouring areas and adjacent time periods [@besag1991; @riebler2016;
+@knorrheld2000]. They can be fitted quickly with integrated nested Laplace
+approximation (INLA) [@rue2009;@blangiardo2013]. They are widely used to
+estimate sub-national child mortality [@mercer2015; @golding2017;
+@burstein2019; @zondi2023; @gascoigne2025; @fenta2025]. In Nepal, Bayesian
+space-time models have been applied to childhood diarrhoea [@li2020], and
+district trends in stunting have been mapped [@nepali2022]. No study was found
+that estimated district-level under-five mortality across successive NDHS
+rounds.
+
+Evidence on the predictors of under-five mortality in Nepal comes mainly from
+regression analyses [@ghimire2019; @bhusal2022; @bhusal2025]. Machine-learning
+methods can capture interactions and non-linear effects. They are increasingly
+applied to Demographic and Health Survey (DHS) data and interpreted with
+Shapley additive explanations (SHAP) [@lundberg2017; @lundberg2020;
+@naznin2025; @asnake2026; @bitew2026]. Some of these studies report
+near-perfect accuracy, above 0.99 in one recent analysis [@naznin2025]. But
+reported accuracy depends heavily on how models are evaluated. Treating death
+before age five as a yes/no outcome ignores children who have not yet reached
+age five. Splitting children from the same survey cluster between training and
+test data overstates performance [@roberts2017]. A systematic review of
+clinical prediction models found no advantage of machine learning over
+logistic regression in well-conducted studies [@christodoulou2019].
+
+This study pooled three NDHS rounds with four aims: (i) to estimate
+district-level under-five mortality for four birth cohorts from 2002 to 2022;
+(ii) to test whether the gap between districts narrowed; (iii) to identify
+predictors of death and measure the district variation that remains after
+adjustment; and (iv) to compare machine-learning and regression models, and to
+test whether the importance of predictors differs between provinces.
+
+# Materials and methods
+
+## Data
+
+The study used three nationally representative surveys: the 2011, 2016 and
+2022 NDHS [@ndhs2011; @ndhs2016; @ndhs2022]. Each survey used stratified
+multistage cluster sampling. Women aged 15--49 years reported a complete birth
+history. For every live birth, it records the date of birth and survival
+status, and, for children who died, the age at death. The birth recode files
+contained `r n_fmt(gsub("[^0-9]", "", tb("tableS_sample_flow")[[2]][1]))` birth
+records. They were linked to the cluster GPS files. Reporting follows the
+STROBE statement [@strobe2007]. The prediction-model component follows
+TRIPOD+AI [@tripodai2024]. The STROBE checklist is given in S1 Checklist and the TRIPOD+AI checklist in
+S2 Checklist.
+
+All dates in the Nepal recodes use the Bikram Sambat calendar. Ages, exposure
+times and birth intervals are differences between two dates, so they are
+unaffected. Calendar years were converted to the Gregorian calendar before
+births were assigned to cohorts (Section S1 in S1 File).
+
+## Linking clusters to districts
+
+The DHS displaces cluster coordinates for confidentiality: by up to 2 km in
+urban areas, 5 km in rural areas and 10 km for 1% of rural clusters
+[@burgert2013]. Each cluster was placed in one of Nepal's 77 districts by
+overlaying its coordinates on the post-2015 district boundaries. A
+nearest-district rule was prepared for points outside every district, but no
+point needed it. Province was assigned from the district. Cluster altitude came
+from the DHS elevation data. Fig S1 in S1 File shows the study area.
+
+## Study population and outcome
+
+The study included live births in the 120 months before interview, born from
+2002 to 2022. The analytic sample had `r n_fmt(key[["n_births"]])` children in
+`r n_fmt(key[["n_clusters"]])` clusters. Of these, `r n_fmt(key[["n_deaths"]])`
+died before age five (Table S1 and Fig S2 in S1 File). A ten-year window was
+used because district estimates need more births than the usual five-year
+window. Births occurred in `r key[["n_districts"]]` districts. Manang and Rukum
+East were not sampled in any round, so their estimates come entirely from the
+spatial model.
+
+Each child was followed from birth until death, the fifth birthday or the
+interview, whichever came first. The child contributed one record for each of
+the eight DHS age segments entered: 0, 1--2, 3--5, 6--11, 12--23, 24--35, 36--47
+and 48--59 months [@singer1993]. The outcome was death within the segment.
+Follow-up stopped at the age reached at interview. Children born shortly
+before a survey therefore contributed only the ages they had lived through
+(Fig S3 in S1 File). This gave `r n_fmt(key[["n_person_period"]])` records
+with `r n_fmt(key[["n_deaths"]])` deaths. Births were grouped into four
+five-year birth cohorts (`r and_list(dash(PERIODS))`). Each survey covers the
+previous ten years. The two middle cohorts therefore draw on two surveys, and
+the outer cohorts on one.
+
+## Mortality rates
+
+Neonatal, infant and under-five mortality were calculated with the DHS
+life-table method [@dhsguide]. For each age segment $i$, the probability of
+dying $q_i$ is the weighted number of deaths divided by the weighted number of
+children entering the segment, less half of those censored within it. The
+probability of dying before age five is $1 - \prod_i (1 - q_i)$. Because
+children were grouped by birth cohort, these are cohort rates, not the period
+rates published in NDHS reports. Survey weights were applied to all mortality rates and to Table 1. The
+weights were normalised within each survey, so each round contributes in
+proportion to its sample size. Confidence intervals (CIs) came from 300
+bootstrap samples of survey clusters within each survey round.
+
+## Covariates
+
+Covariates followed the Mosley--Chen framework [@mosleychen1984]:
+
+- **Child:** sex, multiple birth, birth order and preceding birth interval,
+  with first births identified separately.
+- **Mother:** age at the birth, education, employment, exposure to mass media
+  and caste/ethnicity.
+- **Household:** wealth, urban or rural residence, sex of household head,
+  drinking-water source, sanitation, electricity and cooking fuel.
+- **Place and time:** province, cluster altitude, birth cohort and survey
+  round.
+
+Caste/ethnicity was coded in the same way in all three surveys. It was grouped
+into the seven categories used in DHS analyses for Nepal [@ghimire2019fa]:
+Brahmin/Chhetri, Terai/Madhesi other castes, Dalit, Newar, Janajati, Muslim and
+other.
+
+Two common variables were excluded because a child's death changes them. The
+number of children ever born rises when a mother replaces a child who died
+[@palloni1999]. Household size falls after a death, because a dead child is no
+longer a household member. Both are recorded after any death, so both partly
+encode the outcome. They were used only in a sensitivity analysis.
+
+```{r nrshare}
+#| include: false
+t1x <- tb("table1_characteristics")
+numify <- function(x) suppressWarnings(as.numeric(gsub("[, ]", "", x)))
+wrow <- function(cat) t1x[t1x$Characteristic == "Drinking-water source" & t1x$Category == cat, ]
+## Table 1 columns (07_tables.R): Births, Wt %, Deaths, U5MR
+nr_n   <- numify(wrow("Not recorded")[["Births"]])
+nr_pct <- numify(wrow("Not recorded")[["Wt %"]])
+nr_u5  <- numify(wrow("Not recorded")[["U5MR"]])
+imp_u5 <- numify(wrow("Improved")[["U5MR"]])
+uni_u5 <- numify(wrow("Unimproved")[["U5MR"]])
+eth_u5 <- function(cat)
+  numify(t1x[t1x$Characteristic == "Caste/ethnicity" & t1x$Category == cat, "U5MR"])
+## a renamed column returns NULL, which prints as empty text rather than an
+## error, so fail loudly instead
+stopifnot("Table 1 values for the 'not recorded' paragraph are missing; check column names" =
+            all(lengths(list(nr_n, nr_pct, nr_u5, imp_u5, uni_u5)) == 1),
+          "Table 1 caste/ethnicity values are missing; check column names" =
+            length(eth_u5("Dalit")) == 1 && length(eth_u5("Brahmin/Chhetri")) == 1)
+```
+
+Water, sanitation, cooking fuel and electricity were not recorded for women who
+were visitors in the sampled household (`r n_fmt(nr_n)` children,
+`r f1(nr_pct)`%). These children came from all wealth groups. Their under-five
+mortality (`r f1(nr_u5)` per 1,000) lay between that of children with improved
+(`r f1(imp_u5)`) and unimproved (`r f1(uni_u5)`) water sources (Table 1). They
+were therefore kept as a separate "not recorded" group. The same children were
+unrecorded for all four variables. In the regression models, the four
+identical "not recorded" indicators were replaced by one indicator.
+
+## Spatial clustering
+
+A district-cohort cell contained about 100 sampled births, so crude rates are
+unstable. Rates were therefore also smoothed with the empirical-Bayes method
+[@marshall1991]. Global spatial autocorrelation was measured on smoothed rates with
+Moran's I. Districts sharing a border were treated as neighbours, and each
+test used 9,999 random permutations. Local clusters were identified with the
+Getis--Ord Gi\* statistic [@getisord1992], at p < 0.05 and after
+Benjamini--Hochberg false discovery rate (FDR) correction for the 77 tests
+[@benjamini1995]. Geary's C, the Assunção--Reis empirical-Bayes index
+[@assuncao1999] and local Moran's I [@anselin1995] were also computed. They
+gave the same picture and are reported in S1 File.
+
+Space-time clusters were detected with a discrete Poisson Kulldorff scan
+statistic [@kulldorff1997; @kulldorff1998]. Each scanning window combined a
+circle of neighbouring districts with one or two consecutive birth cohorts. A
+window could cover at most half of the expected deaths and half of the study
+period. Expected deaths used the national mortality schedule for the same age
+segment and birth cohort. A cluster therefore shows mortality that is high
+compared with the rest of Nepal at the same time, not the national decline.
+Significance was tested with 999 Monte Carlo replications, so the smallest
+possible p-value is 0.001.
+
+## Bayesian spatio-temporal model
+
+Deaths $y_{it}$ in district $i$ and cohort $t$ were modelled as
+$y_{it} \sim \text{Poisson}(E_{it}\,\theta_{it})$. Here $E_{it}$ is the
+expected number of deaths and $\theta_{it}$ is the relative risk (RR) compared
+with the national level in the same cohort. The model for $\log \theta_{it}$
+had three parts:
+
+- an intercept;
+- a BYM2 district effect, which combines a spatially structured and an
+  unstructured component, with a mixing parameter $\phi$ [@besag1991;
+  @riebler2016];
+- a first-order random walk over cohorts.
+
+Four further models added one of the Knorr-Held space-time interactions
+[@knorrheld2000]. Penalised-complexity priors were used [@simpson2017], with
+$\Pr(\sigma > 1) = 0.01$ for each standard deviation and $\Pr(\phi < 0.5) =
+0.5$. Models were fitted with INLA [@rue2009]. They were compared with the
+deviance information criterion (DIC), the widely applicable information
+criterion (WAIC) and the cross-validated log score. For every district and
+cohort, the posterior probability that RR exceeded 1.2 was calculated.
+Probabilities above 0.8 were taken as strong evidence of an excess of at least
+20%.
+
+To test whether districts converged, the standard deviation of log RR across
+districts was calculated in each cohort. This was repeated in each of 1,000
+joint posterior samples. The result is a credible interval for the dispersion
+and for its change since `r P1d`. This approach avoids a false appearance of
+convergence. Posterior means are pulled towards the national level most
+strongly in cohorts with fewer births, and comparing them would make districts
+look more alike.
+
+## Individual-level model
+
+Predictors were studied with a Bayesian discrete-time survival model. It was
+fitted to the child-age-segment records with a logit link. The model included
+the age segment, all covariates, a BYM2 district effect and a random effect for
+survey cluster. Fixed effects had normal priors with mean 0 and variance 10.
+Adjusted odds ratios (ORs) are reported with 95% credible intervals (CrIs). The
+remaining variation between districts was summarised by the median OR
+[@merlo2006]. It was calculated over the posterior distribution of the district
+precision.
+
+Three sensitivity analyses were run:
+
+1. a survey-weighted logistic regression with design-based standard errors for
+   strata and clusters [@lumley2004];
+2. the main model restricted to births in the five years before interview,
+   which are less affected by recall error;
+3. the main model with the number of children ever born and household size
+   added.
+
+## Machine learning
+
+Four models were compared: elastic-net logistic regression [@friedman2010],
+random forest [@breiman2001; @wright2017], gradient boosting [@chen2016] and a
+stacked ensemble of the three [@vanderlaan2007]. The models predicted death
+within each age segment from the covariates above. Each variable was entered
+once, as a continuous variable where available. Survey weights were not used.
+
+Children were randomly assigned to a training set (70%) and a test set (30%).
+The split was stratified by outcome and survey round. Model settings were chosen by random search: 12 configurations for gradient boosting and 6 for random forest. The training set
+was divided into ten groups of children. Each configuration was trained on nine
+groups and scored on the tenth, and this was repeated for five of the ten
+groups. The setting with the highest area under the precision-recall curve
+(AUPRC) was chosen. The stacked ensemble was fitted to ten-fold out-of-fold
+predictions (Tables S9 and S10 in S1 File). The test set was used only once,
+for the final evaluation.
+
+Only `r f1(100 * best_row$prevalence)`% of records ended in death. Accuracy was
+therefore measured with both the AUPRC and the area under the receiver
+operating characteristic curve (AUROC) [@saito2015]. Calibration was measured
+with the Brier score, the calibration intercept and slope, and decile plots
+[@vancalster2019]. Class weighting during training inflates predicted risks, so
+the tree models were recalibrated by Platt scaling [@platt1999]. The scaling was
+fitted to training-set predictions and does not change the AUROC or AUPRC. CIs
+came from bootstrap samples of children.
+
+Segment risks $h_s$ were also combined into each child's risk of dying before
+age five, $1 - \prod_s (1 - h_s)$. This was evaluated among children whose
+outcome was known: those who died, and those whose fifth birthday was observed.
+Transfer between regions was tested by leave-one-province-out validation: each
+model was trained on six provinces and tested on the seventh [@roberts2017].
+The gradient-boosting model, refitted to the full sample, was interpreted with
+TreeSHAP values [@lundberg2020]. SHAP values were summed within each
+categorical variable and were also summarised by province.
+
+## Software and ethics
+
+Analyses were performed in R `r paste(R.version$major, R.version$minor, sep = ".")`
+[@rcore] with the packages sf [@pebesma2018], spdep [@bivand2018], INLA,
+survey [@lumley2004], glmnet, ranger, xgboost and shapviz. Package versions are
+given in Table S20 in S1 File. A fixed random seed was used for all random
+steps.
+
+This is a secondary analysis of anonymised data obtained from the DHS Program
+under a data-use agreement. The NDHS protocols were approved by the Nepal Health
+Research Council and the ICF Institutional Review Board. Informed consent was
+obtained from all respondents. No further ethical approval was required.
+
+# Results
+
+## Sample and national trends
+
+The analytic sample comprised `r n_fmt(key[["n_births"]])` live births in
+`r n_fmt(key[["n_clusters"]])` clusters. They contributed
+`r n_fmt(key[["n_person_period"]])` child-age-segment records and
+`r n_fmt(key[["n_deaths"]])` under-five deaths (Table 1).
+
+```{r tbl1}
+## logical (not alphabetical) category order, first-listed characteristic label only
+cat_order <- c("Female", "Male", "Singleton", "Multiple", "1", "2-3", "4-5", "6+",
+               "First birth", "<24 months", "24-35 months", ">=36 months",
+               "<20", "20-24", "25-29", "30-34", "35+", "None", "Primary", "Secondary or higher",
+               "Brahmin/Chhetri", "Newar", "Janajati", "Terai/Madhesi other caste", "Dalit",
+               "Muslim", "Other", "Not employed", "Employed", "No", "Yes",
+               "Poorest", "Poorer", "Middle", "Richer", "Richest", "Urban", "Rural",
+               "Koshi", "Madhesh", "Bagmati", "Gandaki", "Lumbini", "Karnali",
+               "Sudurpashchim", "Improved", "Unimproved", "Clean", "Polluting",
+               "Not recorded")
+t1 <- tb("table1_characteristics") %>%
+  mutate(.row = row_number(), .o = match(Category, cat_order)) %>%
+  group_by(Characteristic) %>% mutate(.g = min(.row)) %>% ungroup() %>%
+  arrange(.g, .o) %>% select(-.row, -.o, -.g) %>%
+  mutate(Category = sub(">=", "≥", Category, fixed = TRUE),
+         Deaths = n_fmt(gsub(",", "", Deaths)),
+         Characteristic = ifelse(duplicated(Characteristic), "", Characteristic))
+tbl(t1, align = c("left","left","right","right","right","right"),
+    caption = "Table 1. Characteristics of live births and unadjusted under-five mortality, Nepal Demographic and Health Surveys 2011, 2016 and 2022 pooled. Counts are unweighted; percentages and mortality rates are weighted. Wt %, weighted percentage; Deaths, under-five deaths; U5MR, under-five mortality rate per 1,000 live births.")
+```
+
+Under-five mortality fell from `r f1(nat$u5mr[1])` per 1,000 live births in the
+`r P1d` cohort to `r f1(tail(nat$u5mr, 1))` in the `r PLd` cohort. This is a
+decline of `r f1(key[["pct_decline"]])`% (Table 2; Fig 1A). Neonatal mortality
+fell more slowly, from `r f1(nat$nnmr[1])` to `r f1(tail(nat$nnmr, 1))` per
+1,000. As a result, the share of under-five deaths in the first month rose
+from `r f1(100 * nat$nnmr[1] / nat$u5mr[1])`% to
+`r f1(100 * tail(nat$nnmr, 1) / tail(nat$u5mr, 1))`%. Trends by province are
+shown in Fig S6 in S1 File.
+
+For births in the five years before each survey, the estimates were
+`r f1(valid$u5mr[1])`, `r f1(valid$u5mr[2])` and `r f1(valid$u5mr[3])` per 1,000
+in 2011, 2016 and 2022. The published NDHS values were
+`r valid$published_u5mr[1]`, `r valid$published_u5mr[2]` and
+`r valid$published_u5mr[3]` (Table S2 in S1 File). The estimates were
+`r if (all(valid$u5mr < valid$published_u5mr)) "slightly lower in all three rounds. This is expected, because cohort rates stop at the interview" else "close to the published values"`.
+
+```{r tbl2}
+tbl(tb("table2_period_rates"),
+    caption = "Table 2. Neonatal (NNMR), infant (IMR) and under-five (U5MR) mortality per 1,000 live births by birth cohort, pooled across the 2011, 2016 and 2022 surveys.")
+```
+
+**Fig 1. National child mortality and the distribution of district mortality by birth cohort.** (A) Neonatal, infant and under-five mortality per 1,000 live births; the shaded band is the 95% bootstrap confidence interval for under-five mortality. (B) Posterior under-five mortality for each district from the Bayesian spatio-temporal model; red diamonds mark the national rate.
+
+```{r}
+#| output: asis
+fig_img("fig1_national_trend")
+```
+
+## Spatial clustering
+
+Pooled over 2002--2022, district under-five mortality was spatially clustered.
+On empirical-Bayes rates, Moran's I was `r f3(mp$moran_I)` (p
+`r pfmt(mp$moran_p)`; Table S3 in S1 File). Within single cohorts, the evidence
+was weaker.
+Moran's I was significant in `r nw(sum(mper_raw$moran_p < 0.05))` of four
+cohorts on crude rates and in `r nw(sum(mper_eb$moran_p < 0.05))` on smoothed
+rates (Table S3 in S1 File). Single-cohort district rates carry little
+information (Fig S4 in S1 File). Getis--Ord Gi\* found `r nw(n_hot)`
+hot-spot and `r nw(n_cold)` cold-spot districts at p < 0.05. After FDR
+correction, `r nw(n_hotf)` hot spots and `r if (n_coldf == 0) "no" else nw(n_coldf)` cold spots remained
+(Fig 2A; Table S4 and Fig S5 in S1 File).
+
+
+The scan statistic found one significant space-time cluster (Table 3; Fig 2B).
+It comprised `r sc1$n_districts` neighbouring districts in `r sc_provinces`
+(`r sc_districts`) in the `r sc_cohorts` cohorts. The cluster had
+`r sc1$observed` observed deaths against `r f1(sc1$expected)` expected (RR
+`r f2(sc1$rr)`, p `r pmc(sc1$p_value)`). No other cluster was significant.
+
+```{r tbl4}
+tbl(tb("table4_scan_clusters") |> select(-`Member districts`) |>
+      mutate(p = sub("<0.001", "≤0.001", p, fixed = TRUE)),   # Monte Carlo floor, 999 replicates
+    caption = "Table 3. Space-time clusters of under-five mortality from the discrete Poisson scan statistic. Expected deaths are standardised by age segment within birth cohort; p-values are from 999 Monte Carlo replications. Districts, number of districts in the cluster; RR, relative risk inside versus outside the cluster; LLR, log-likelihood ratio.")
+```
+
+**Fig 2. Spatial clustering of under-five mortality.** (A) Getis--Ord Gi\* hot and cold spots on empirical-Bayes district rates by birth cohort (p < 0.05). (B) The significant space-time cluster from the discrete Poisson scan statistic; expected deaths are standardised within birth cohort.
+
+```{r}
+#| output: asis
+fig_img("fig3_clusters")
+```
+
+## Bayesian spatio-temporal model
+
+The `r best_inla` model had the lowest DIC (Table 4). Its advantage over the
+model without a space-time interaction was only `r f1(dic_gap)` units, which is
+too small to matter. The Type IV model fitted poorly, with `r typeiv_fail`
+cross-validation failures. The spatial pattern was therefore nearly fixed over
+time: the same districts stayed above or below the national level while
+mortality fell everywhere. The BYM2 mixing parameter was
+`r ci_txt(phi$mean, phi$lower, phi$upper)`. Its wide interval means the data
+cannot say precisely how much of the district variation is spatially
+structured (Table S5 in S1 File).
+
+```{r tbl5}
+tbl(tb("table7_model_comparison"),
+    caption = "Table 4. Comparison of Bayesian spatio-temporal models for district-cohort under-five deaths. Lower DIC, WAIC and mean log score indicate better fit.")
+```
+
+Posterior mortality was highest in the districts of Karnali and Sudurpashchim.
+It was lowest in the Kathmandu Valley and nearby districts of Bagmati and
+Gandaki (Fig 3). In the `r PLd` cohort, the highest relative risks were in
+`r top_burden`. In total, `r nw(n_exceed)` districts had a posterior
+probability above 0.8 of exceeding the national level by more than 20%
+(Fig 4A and B; Tables S6 and S7 in S1 File).
+
+**Fig 3. District-level under-five mortality by birth cohort.** Posterior mean under-five mortality per 1,000 live births from the Bayesian spatio-temporal model. Grey outlines show the seven provinces.
+
+```{r}
+#| output: asis
+fig_img("fig2_smoothed_u5mr_maps")
+```
+
+**Fig 4. Relative risk, exceedance probability and residual district effects.** (A) Posterior relative risk in the `r PLd` cohort, compared with the national level of the same cohort. (B) Posterior probability that district mortality exceeds the national level by more than 20%. (C) Residual district odds ratios from the individual-level model after adjustment for all covariates.
+
+```{r}
+#| output: asis
+fig_img("fig4_bayesian_maps")
+```
+
+The gap between districts did not narrow (Table 5). The standard deviation of
+log RR was `r ci_txt(c1$sd_log_rr_median, c1$sd_log_rr_lo, c1$sd_log_rr_hi, 3)`
+in `r P1d` and `r ci_txt(cL$sd_log_rr_median, cL$sd_log_rr_lo, cL$sd_log_rr_hi, 3)`
+in `r PLd`. The posterior change was `r sgn(cL$change_median, 3)` (95% CrI
+`r sgn(cL$change_lo, 3)` to `r sgn(cL$change_hi, 3)`). The probability that the
+gap narrowed was `r f2(cL$p_narrower)`. Absolute differences between districts
+fell as national mortality fell. Relative differences stayed the same
+(Table S8 in S1 File).
+
+```{r tbl6}
+tbl(tb("table7d_convergence_posterior"),
+    caption = "Table 5. Between-district dispersion of posterior log relative risk by birth cohort, calculated within 1,000 joint posterior samples.")
+```
+
+## Predictors of under-five mortality
+
+In the adjusted Bayesian model (Table 6), higher odds of death were associated
+with `r results_or`. `r pred_extra`
+
+```{r tbl7}
+tbl(split_term(tb("table6_adjusted_or") |> filter(!grepl("^Age segment", Term))),
+    align = c("left", "left", "right", "right"),
+    caption = "Table 6. Adjusted odds ratios (ORs) with 95% credible intervals (CrIs) for death within an age segment, from the Bayesian discrete-time survival model with district (BYM2) and cluster random effects. Age-segment terms are omitted.")
+```
+
+After adjustment, the median OR between districts was
+`r ci_txt(mor_d$median_odds_ratio, mor_d$lo, mor_d$hi)`. Between clusters it was
+`r ci_txt(mor_c$median_odds_ratio, mor_c$lo, mor_c$hi)`. Both are given in
+Table S16 in S1 File. The largest residual district effects were in Karnali and Sudurpashchim
+(Fig 4C). The district effect was
+modest`r if (mor_d$median_odds_ratio < mor_c$median_odds_ratio) " and smaller than the cluster effect" else ""`.
+But its credible interval excluded 1. Measured child, maternal and household
+characteristics therefore did not fully explain the differences between
+districts.
+
+The survey-weighted model and the five-year model gave similar estimates
+(Tables S17 and S18 in S1 File).
+`r if (n_same_dir == nrow(same_dir)) paste0("All ", nw(nrow(same_dir))) else paste(nw(n_same_dir), "of the", nw(nrow(same_dir)))`
+key associations had the same direction in the five-year model. Adding
+children ever born and household size gave ORs per standard deviation of
+`r ci_txt(par_add$or, par_add$or_lo, par_add$or_hi)` and
+`r ci_txt(hh_add$or, hh_add$or_lo, hh_add$or_hi)`. These directions are
+expected if the two variables partly reflect the death itself. Adding them
+also weakened the associations with no maternal education (OR
+`r f2(or_row("^meduNone", sens[sens$analysis == ADD, ])$or)`) and the poorest
+wealth quintile (OR `r f2(or_row("^wealthPoorest", sens[sens$analysis == ADD, ])$or)`).
+Outcome-dependent variables can therefore hide socioeconomic gradients.
+
+## Machine learning
+
+Table 7 and Fig 5 show the test-set results. The best flexible model was the
+`r tolower(best_ml)`. Its AUROC was `r ci_txt(best_row$roc_auc, best_row$roc_lo, best_row$roc_hi, 3, "95% CI")`.
+For elastic-net regression it was
+`r ci_txt(enet_row$roc_auc, enet_row$roc_lo, enet_row$roc_hi, 3, "95% CI")`
+(Fig 5A). The AUPRC values were `r f3(best_row$pr_auc)` and
+`r f3(enet_row$pr_auc)` (Fig 5B). The intervals overlapped. After
+recalibration, all models were well calibrated (Fig 5C; Tables S12 and S13 in S1 File).
+
+For each child's risk of dying before age five, the `r tolower(child_ml)` had an
+AUROC of `r f3(ch_row$roc_auc)`. The mean predicted risk was
+`r f1(100 * ch_row$mean_predicted)`%, against `r f1(100 * ch_row$observed)`%
+observed. The observed figure is inflated by design. All children who died were
+included, but surviving children were included only if their fifth birthday
+had been observed.
+
+```{r tbl8}
+tbl(tb("table5_ml_performance"),
+    caption = "Table 7. Discrimination and calibration on the held-out 30% of children. Person-period metrics refer to death within an age segment; child-level metrics to death before age five among children with observed outcomes. AUROC, area under the receiver operating characteristic curve; AUPRC, area under the precision-recall curve; CI, confidence interval.")
+```
+
+**Fig 5. Machine-learning performance on the held-out test set.** (A) Receiver operating characteristic curves. (B) Precision-recall curves; the dotted line shows the proportion of deaths. (C) Calibration by decile of predicted risk after recalibration. (D) Area under the receiver operating characteristic curve in leave-one-province-out validation.
+
+```{r}
+#| output: asis
+fig_img("fig5_ml_performance")
+```
+
+In leave-one-province-out validation, gradient boosting reached AUROCs from
+`r f3(min(scv$roc_xgb))` (`r scv$province[which.min(scv$roc_xgb)]`) to
+`r f3(max(scv$roc_xgb))` (`r scv$province[which.max(scv$roc_xgb)]`). This is
+similar to the test-set result (Fig 5D; Table S11 in S1 File).
+
+Apart from age, the most important predictors in the SHAP analysis were
+`r top_shap` (Fig 6; Table S14 and Fig S7 in S1 File). The same factors
+mattered in every province (Fig 7). For the 12 leading predictors, the median
+coefficient of variation of provincial SHAP shares was `r f1(median(sumv$cv))`%.
+The mean Spearman correlation between provincial rankings was `r f2(rho_mean)`
+(minimum `r f2(rho_min)`).
+`r if (nrow(prov_s) > 0) paste0("The share attributed to province itself was largest in ", prov_s$province[which.max(prov_s$share)], " (", f1(max(prov_s$share)), "%) and smallest in ", prov_s$province[which.min(prov_s$share)], " (", f1(min(prov_s$share)), "%). This matches the residual district effect in the Bayesian model.") else ""`
+
+**Fig 6. SHAP interpretation of the gradient-boosting model.** (A) Mean absolute SHAP value for each predictor, coloured by predictor group. (B) Distribution and direction of individual SHAP values; colour shows the value of the predictor.
+
+```{r}
+#| output: asis
+fig_img("fig6_shap")
+```
+
+**Fig 7. Composition of modelled risk by province.** Share of each province's total SHAP magnitude attributable to each leading predictor, from a single national model.
+
+```{r}
+#| output: asis
+fig_img("fig7_shap_by_province")
+```
+
+# Discussion
+
+This study pooled three NDHS rounds to estimate district-level under-five
+mortality in Nepal across four birth cohorts. Under-five mortality fell by
+`r f1(key[["pct_decline"]])`% between the `r P1d` and `r PLd` cohorts. But the
+relative gap between districts did not narrow. A cluster of districts in
+`r sc_provinces` carried excess risk in the `r sc_cohorts` cohorts. A modest
+district effect remained after adjustment for measured characteristics.
+
+## Progress without convergence
+
+The absence of convergence is the key finding. Absolute gaps narrowed only
+because national mortality fell. The posterior dispersion between districts
+stayed the same. No space-time interaction improved on a model with separate
+spatial and time effects. The excess risk in Karnali and Sudurpashchim agrees
+with earlier work. Relative inequalities in under-five mortality widened in
+Nepal between 1996 and 2011 [@sreeramareddy2013]. Childhood mortality was
+highest in Karnali and Sudurpashchim provinces [@ghimire2019fa]. The same
+region has persistent disadvantage in stunting [@nepali2022] and diarrhoea
+[@li2020]. Similar persistence despite national decline has been reported in
+sub-Saharan Africa [@golding2017; @burstein2019; @zondi2023; @fenta2025]. A
+district that stays well above a halving national rate has not caught up.
+National averages cannot show this.
+
+## Methodological lessons
+
+The choice of estimator mattered. Single-cohort district rates, based on about
+100 births each, gave inconsistent evidence of clustering. Moran's I was
+significant in `r nw(sum(mper_raw$moran_p < 0.05))` of four cohorts on crude
+rates and in `r nw(sum(mper_eb$moran_p < 0.05))` on smoothed rates. Rates pooled
+over the whole period were clearly clustered. Local cluster statistics on
+sparse survey rates should therefore be read with caution, especially without
+correction for multiple testing. Testing convergence within posterior samples
+also mattered. Comparing posterior means would have suggested convergence
+because of shrinkage alone.
+
+## Predictors
+
+The strongest predictors were multiple birth, a short preceding birth
+interval, young maternal age, no maternal education and household poverty.
+They agree with earlier NDHS analyses and systematic reviews [@ghimire2019;
+@bhusal2022].
+`r if (nrow(eth_hi) + nrow(eth_lo) > 0) "Differences by caste/ethnicity persisted after adjustment for wealth, education and residence [@ghimire2019fa]." else paste0("Unadjusted mortality was much higher among Dalit children (", f1(eth_u5("Dalit")), " per 1,000) than among Brahmin/Chhetri children (", f1(eth_u5("Brahmin/Chhetri")), "; Table 1). After adjustment for wealth, education and residence, no caste or ethnic group differed credibly. The caste gap therefore appears to run mainly through these factors [@ghimire2019fa].")`
+These odds ratios come from one mutually adjusted model. They describe
+associations and should not all be read as causal effects [@westreich2013].
+
+Excluding children ever born and household size mattered. Both are strong
+correlates of child death in many DHS studies. In some machine-learning
+studies, household size ranks among the leading predictors [@naznin2025]. But
+both are measured after the death and are changed by it. Including them would
+largely reproduce the outcome rather than explain it.
+
+## Machine learning
+
+Flexible models gave little improvement over penalised logistic regression.
+This agrees with systematic evidence from clinical prediction
+[@christodoulou2019]. It is far below the near-perfect accuracy reported in
+some DHS studies [@naznin2025]. Such figures can arise when related children
+are split between training and test data. They can also arise when accuracy is
+used as the metric for a rare outcome. In this study, all records of a child
+stayed together, the test set was used once, and whole provinces were held
+out. Segment-level AUROC is also inflated, because risk depends strongly on age.
+For each child's risk of dying before age five, discrimination was low (AUROC
+`r f2(min(perf_ch$roc_auc))`--`r f2(max(perf_ch$roc_auc))`). None of the models
+could identify individual children at high risk.
+
+The value of the models was explanatory. They transferred across provinces.
+Each predictor contributed similarly to risk in every province. Predictors
+therefore appear to act nationally. The persistent geographical gap is not
+explained only by differences in household risk factors.
+
+## Residual district variation
+
+After adjustment for all measured child, maternal and household
+characteristics, the median OR between districts was
+`r f2(mor_d$median_odds_ratio)`. Between clusters within districts it was
+`r f2(mor_c$median_odds_ratio)`. The district effect is modest compared with
+the strongest individual associations. But it is credibly above zero, and it
+applies to every child in a district. It may reflect area factors that the DHS
+does not measure. Examples are travel time to emergency obstetric and newborn
+care, staffing, referral capacity and seasonal isolation. These are hypotheses,
+not findings. Linking survey data to health-facility and access data is a
+priority for future work.
+
+## Implications for policy
+
+Districts in the detected cluster, and those with high exceedance
+probabilities, form a priority list that accounts for uncertainty. Exceedance
+probabilities are better than rankings of point estimates, because district
+estimates differ greatly in precision. Predictors acted similarly across
+provinces. This supports one common package of interventions, delivered more
+intensively where risk is highest. The package should include birth spacing,
+prevention of adolescent pregnancy, maternal education and care for multiple
+births`r if (credible("^clean_fuelPolluting")) ", together with clean cooking fuel" else ""`.
+The residual district effect suggests that investment in services and access is
+also needed. The rising neonatal share means that further gains depend
+increasingly on care around birth and in the first month.
+
+At 33 per 1,000 in the 2022 NDHS, national under-five mortality is still above
+Nepal's 2025 milestone of 24 and its 2030 target of 20 [@ndhs2022; @npc2017].
+The relative gap between districts has not narrowed. Even if Nepal reaches its
+national target, the highest-risk districts, with relative risks up to
+`r f1(max(rr_last$rr))`, would remain well above it unless their decline
+accelerates.
+
+## Strengths and limitations
+
+The study has several strengths. The discrete-time survival design uses
+recently born children without treating them as survivors. One analytic file
+was used for mortality estimation, spatial modelling and machine learning. The
+estimates were checked against published NDHS values. Convergence was tested
+with full posterior uncertainty. The validation designs respected the
+clustering of the data.
+
+The study also has limitations. First, mothers reported births up to ten years
+back, so dates and ages at death may be misremembered. Children of women who
+died or migrated are missing, which may bias mortality downward. Results were
+similar, however, for births in the last five years. Second, the outer cohorts
+rest on one survey each. The latest cohort is heavily censored: only
+`r formatC(recent_obs, format = "f", digits = 0)`% of children born in
+`r PLd` had died or reached age five by interview. Third, most covariates,
+including wealth, were measured at interview rather than at birth. Fourth,
+antenatal, delivery and postnatal care could not be included. Fifth, the
+Bayesian and machine-learning models were not weighted. However, residence and
+location, on which the survey strata are based, were included, and a
+survey-weighted model gave similar results. Sixth, estimates are for districts,
+while services are now run by 753 local governments. The two unsampled
+districts are model estimates only. Seventh, the settings used in
+leave-one-province-out validation were tuned on data from all provinces, which
+may slightly favour those results. Finally, the study is observational and
+cannot show causal effects.
+
+# Conclusions
+
+Under-five mortality in Nepal fell by `r f1(key[["pct_decline"]])`% between the
+`r P1d` and `r PLd` birth cohorts. But the relative gap between districts did
+not narrow. A cluster of districts in `r sc_provinces` carried excess risk in
+the `r sc_cohorts` cohorts. The predictors of child death were the same across
+provinces. A modest district effect remained after adjustment. Machine learning
+did not improve prediction over penalised regression. Reaching Nepal's national
+target of 20 per 1,000 by 2030 will need more intensive investment in
+persistently high-risk districts. That investment should be guided by
+estimates that show their uncertainty, and by research that links survey data
+to health-service access.
+
+# Acknowledgments {.unnumbered}
+
+The author thanks the DHS Program for access to the Nepal Demographic and
+Health Survey data, and the Survey Department of Nepal for the district
+boundary files. The author used Claude (Anthropic), a large language model, to
+help write and debug the R analysis code and to edit the language of the
+manuscript. The author reviewed and edited all output, verified every result
+against the analysis code, and take full responsibility for the content of the
+article.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::
+
+# Supporting information {.unnumbered}
+
+**S1 File. Supplementary methods, tables and figures.** Supplementary methods
+(Sections S1--S7), Tables S1--S20 and Figs S1--S7. (DOCX)
+
+**S1 Checklist. STROBE checklist.** Reporting checklist for observational
+studies. (DOCX)
+
+**S2 Checklist. TRIPOD+AI checklist.** Reporting checklist for the
+prediction-model component. (DOCX)

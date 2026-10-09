@@ -1,0 +1,4 @@
+"learner","level","roc_auc","pr_auc","brier","mean_predicted","observed","prevalence","n"
+"Elastic-net logistic regression","Child (probability of dying before age five)",0.595488340042795,0.164397147168726,0.0819660901449173,0.0540275777679758,0.091,0.091,5000
+"Gradient boosting","Child (probability of dying before age five)",0.622698050024783,0.172318728065876,0.0814812472659295,0.0594063706117138,0.091,0.091,5000
+"Random forest","Child (probability of dying before age five)",0.623493514186583,0.187430468884366,0.0809736612661208,0.0532587665462145,0.091,0.091,5000
